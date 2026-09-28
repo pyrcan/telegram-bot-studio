@@ -1,0 +1,84 @@
+{
+  "id": "assistant-studio",
+  "name": "Telegram Bot Studio",
+  "version": "0.1.0",
+  "description": "Build, privately test and manage Telegram bots. Requires Telegram Bridge paired to your owner account for setup; each bot serves its users separately.",
+  "entry": "index.jsx",
+  "icon": "icon.png",
+  "offline_capable": false,
+  "permissions": {
+    "job_secret_read": [
+      "tg-1",
+      "tg-2",
+      "tg-3",
+      "tg-4",
+      "tg-5",
+      "tg-6",
+      "tg-7",
+      "tg-8"
+    ]
+  },
+  "service": {
+    "id": "assistant-studio",
+    "entry": "service.py",
+    "access": "apps"
+  },
+  "source_files": [
+    "owner-handoff.js",
+    "telegram_http.py",
+    "assistant_store.py",
+    "service.py",
+    "worker.py",
+    "text_runner.py",
+    "events.py",
+    "catalog.py",
+    "owner.py",
+    "assistant-studio-core.md",
+    "assistant-studio.md",
+    "simple-theme.js",
+    "telegram_store.py",
+    "telegram_transport.py",
+    "connect_telegram.py",
+    "setup_telegram.py",
+    "link_metadata.py",
+    "note_management.py",
+    "telegram_notes.py",
+    "owner_action.py",
+    "note_views.py",
+    "telegram_notebook.py",
+    "telegram_menu.py",
+    "telegram_onboarding.py",
+    "bot_behaviors.py",
+    "editing_chat.py",
+    "bot_lifecycle.py",
+    "private_testing.py",
+    "telegram_reconnect.py",
+    "README.md",
+    "LICENSE",
+    "TESTING.md"
+  ],
+  "schedule": {
+    "default": "* * * * *",
+    "user_configurable": false,
+    "job": "worker.sh"
+  },
+  "system_app": true,
+  "system_prompt": "assistant-studio-core.md",
+  "skills": [
+    "assistant-studio.md"
+  ],
+  "package_id": "urn:uuid:0038fdf5-a9d5-44c7-a2e1-5a98879d41fe",
+  "author": "pyrcan",
+  "license": "MIT",
+  "store": {
+    "tagline": "Build a bot. Test privately. Share when ready.",
+    "description": "Create focused Telegram bots in Möbius, customize their behavior in an owner editing chat, try draft changes privately and publish a tested version for approved users. Requires Telegram Bridge installed and paired before connecting a bot. Each specialist needs a separate Telegram identity; Bridge remains your personal Möbius channel. Customization opens in Möbius. An optional, explicitly approved Bridge connection lets you manage user access from Telegram. Installation does not activate bots, approve users or publish your private content. This core edition includes text assistants and a personal notebook, not experimental media converters. AI replies require a connected Codex account and an available configured model; usage limits and charges follow that account. Generated images open in Möbius after sign-in rather than being sent to Telegram; set the Möbius address in Bridge for navigation links.",
+    "screenshots": [
+      {
+        "src": "static/store/studio-core-store.png",
+        "alt": "Telegram Bot Studio showing the unconnected Pocket Notes starter and the Telegram Bridge prerequisite.",
+        "label": "Build separate bots in Studio"
+      }
+    ]
+  }
+}
