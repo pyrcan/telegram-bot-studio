@@ -3,12 +3,13 @@ import json
 import re
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 METHODS = frozenset({
     'getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage', 'editMessageText',
     'answerCallbackQuery', 'deleteMessage', 'setMyCommands', 'deleteMyCommands',
     'setChatMenuButton', 'setMyDescription', 'setMyShortDescription',
-    'sendChatAction', 'sendMessageDraft', 'sendRichMessageDraft',
+    'sendChatAction',
 })
 MAX_REQUEST = 256 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
@@ -90,9 +91,13 @@ def call(key, method, params=None, *, opener=None):
 
 
 def call_saved(secret_name, method, params=None, *, app_id, bearer, api_base):
-    """Read a named own-app key with the job/service credential; never cache it."""
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', secret_name):
+    """Read a named own-app key with the own job/service credential; never cache it."""
+    if (type(secret_name) is not str or not re.fullmatch(r'tg-[1-8]', secret_name)
+            or not str(app_id).isdigit() or int(app_id)<=0 or method not in METHODS):
         raise TelegramError(reason='invalid-request')
+    parsed=urlsplit(api_base)
+    if parsed.scheme not in ('http','https') or parsed.hostname not in ('127.0.0.1','localhost','::1') or parsed.username or parsed.password or parsed.path not in ('','/') or parsed.query or parsed.fragment:
+        raise TelegramError(reason='invalid-platform')
     try:
         request = urllib.request.Request(
             api_base.rstrip('/') + f'/api/apps/{int(app_id)}/secrets/{secret_name}',
@@ -106,7 +111,10 @@ def call_saved(secret_name, method, params=None, *, app_id, bearer, api_base):
         key = raw.decode()
     except Exception:
         raise TelegramError(reason='key-unavailable') from None
-    return call(key, method, params)
+    try:
+        return call(key, method, params)
+    finally:
+        key = None
 
 
 def bot_identity(bot):

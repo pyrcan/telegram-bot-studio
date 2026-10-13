@@ -61,11 +61,17 @@ def command(model):
     args += ['--model',model,'-']
     return args
 
-def parse_output(stdout):
+def parse_output(stdout, on_usage=None):
     parts=[]
     for line in stdout.splitlines():
         try: event=json.loads(line)
         except ValueError: continue
+        if not isinstance(event,dict):continue
+        usage=event.get('usage')
+        if event.get('type')=='turn.completed' and isinstance(usage,dict) and on_usage:
+            fields=('input_tokens','cached_input_tokens','output_tokens')
+            if all(type(usage.get(k)) is int and 0<=usage[k]<=10**15 for k in fields) and usage['cached_input_tokens']<=usage['input_tokens']:
+                on_usage({k:usage[k] for k in fields})
         item=event.get('item',{})
         if event.get('type')=='item.completed' and item.get('type')=='agent_message':
             parts.append(item.get('text',''))
@@ -73,7 +79,7 @@ def parse_output(stdout):
     if not value: raise RuntimeError('The model returned no answer. Check its model setting and connection.')
     return value[:24000]
 
-def run_text(prompt, model, alive=lambda:True, timeout=150):
+def run_text(prompt, model, alive=lambda:True, timeout=150, *, on_usage=None):
     env=runtime_environment()
     with tempfile.TemporaryDirectory(prefix='assistant-text-') as cwd:
         # File-backed pipe drains avoid child deadlock on a verbose/error output;
@@ -92,7 +98,7 @@ def run_text(prompt, model, alive=lambda:True, timeout=150):
                 if proc.returncode:
                     out.seek(0);err.seek(0)
                     raise RuntimeError(failure_message(out.read(200000).decode('utf-8','replace'),err.read(200000).decode('utf-8','replace')))
-                out.seek(0);return parse_output(out.read(2_000_000).decode('utf-8','replace'))
+                out.seek(0);return parse_output(out.read(2_000_000).decode('utf-8','replace'),on_usage)
             finally:
                 if proc.poll() is None:
                     proc.kill()

@@ -1,7 +1,7 @@
 """Owner-only bot editing chat identity, never participant content.
 
-The app cannot mint owner chats. Its owner-chat helper is the
-authorized path to this operation. The shell subsequently opens a normal owner chat.
+The app cannot mint owner chats. An approved operation in the actual owner
+chat creates or reuses the canonical chat; the UI only opens that chat.
 No model turn is submitted: the owner reviews the draft and presses Send.
 """
 import uuid

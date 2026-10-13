@@ -1,4 +1,4 @@
-"""Owner management and explicitly connected companion-app metadata."""
+"""Private owner management; no public content, files or stream endpoints."""
 import json
 import os
 import sys
@@ -15,8 +15,13 @@ def dispatch(store, request):
     actor = request.get('actor') or {}
     # Public admission requires a separately approved deployment. Reject even
     # valid participant sessions arriving through an accidental public route.
-    if request.get('public') or actor.get('scope') not in ('owner','app','agent') or actor.get('delegated'):
-        raise Problem('Studio management is private to its owner.',403)
+    if request.get('public') or actor.get('scope') not in ('owner','app','agent') or actor.get('delegated') or actor.get('delegation_id') is not None:
+        raise Problem('This local prototype is private to its owner.',403)
+    # A guest's owner/app-shaped bearer is NOT installation-owner authority.
+    # Only metadata-only catalog navigation is intentionally guest-readable;
+    # every other management read/mutation is denied at this owning seam.
+    if (actor.get('browser_grant_id') is not None or actor.get('browser_session_id') is not None) and not (path=='owner/catalog' and method=='GET'):
+        raise Problem('Only the installation owner can manage this Studio.',403)
     own_id = int(os.environ.get('APP_ID','0'))
     foreign = actor.get('scope') == 'app' and actor.get('app_id') != own_id
     catalog = Catalog(store)
@@ -30,6 +35,12 @@ def dispatch(store, request):
         if actor.get('app_id') not in allowed or method != 'GET' or path != 'owner/catalog':
             raise Problem('Other apps may read only explicitly connected owner navigation metadata.',403)
         return catalog.listing()
+    if path == 'owner/dashboard' and method == 'GET':
+        from analytics import dashboard
+        return dashboard(catalog)
+    if path == 'owner/cost-assumptions' and method == 'POST':
+        from cost_settings import save
+        result=save(catalog,body);changed();return result
     if path == 'owner/catalog' and method == 'GET': return catalog.listing()
     if path == 'owner/create' and method == 'POST': return catalog.create(body)
     if path == 'owner/navigation' and method == 'POST':
@@ -52,25 +63,30 @@ def dispatch(store, request):
             if actor.get('scope') not in ('owner','agent'):raise Problem('Use the trusted owner confirmation for development actions.',403)
             from private_testing import change
             return change(catalog,identity,body,action.split('/')[-1])
+        if action=='identity' and method=='POST':
+            from bot_identity import save
+            result=save(catalog,identity,body);changed();return result
         if action=='access/users' and method=='GET':return tg.access_list(store,identity)
         if action=='access/change' and method=='POST':
             if actor.get('scope') not in ('owner','agent'):raise Problem('Use the trusted owner access confirmation.',403)
             return tg.change_access(store,identity,body)
         if action.startswith('telegram/'):
             if action=='telegram/state' and method=='GET':return tg.public_state(store,identity)
+            if action=='telegram/pairing-code' and method=='POST':
+                result=tg.issue_pairing(store,identity,body);changed();return result
             if action in ('telegram/prepare-identity','telegram/setup-error','telegram/reconnect-plan','telegram/reconnect') and method=='POST':
                 if actor.get('scope') not in ('owner','agent'):raise Problem('Use the trusted owner setup flow.',403)
                 if action=='telegram/prepare-identity':return tg.prepare_identity(store,identity,body)
                 if action=='telegram/setup-error':return tg.setup_error(store,identity,body)
                 from telegram_reconnect import plan,commit
                 return (plan if action.endswith('reconnect-plan') else commit)(store,identity,body)
-            if action in ('telegram/reserve','telegram/verified','telegram/activate','telegram/connection','telegram/begin-verify','telegram/reset-setup'):
+            if action in ('telegram/reserve','telegram/await-owner','telegram/activate','telegram/connection','telegram/begin-verify','telegram/reset-setup'):
                 if actor.get('scope') not in ('owner','agent'):raise Problem('This step needs the owner’s secure setup flow.',403)
                 if action=='telegram/begin-verify' and method=='POST':return tg.begin_verification(store,identity,body.get('epoch'))
                 if action=='telegram/reset-setup' and method=='POST':return tg.reset_verification(store,identity,body.get('epoch'))
                 if action=='telegram/connection' and method=='GET':return tg.connection(store,identity)
                 if action=='telegram/reserve' and method=='POST':return tg.reserve(store,identity)
-                if action=='telegram/verified' and method=='POST':return tg.verified(store,identity,body)
+                if action=='telegram/await-owner' and method=='POST':return tg.await_owner(store,identity,body)
                 if action=='telegram/activate' and method=='POST':return tg.activate(store,identity,body)
             if action=='telegram/pause' and method=='POST':return tg.pause(store,identity)
             if action=='telegram/invite' and method=='POST':raise Problem('Joining now needs owner approval. Share the bot link and review requests in Users.',409)
@@ -194,6 +210,11 @@ def bridge_access(root, request):
 def domain_dispatch(store, request):
     path=request.get('path','').strip('/')
     method=request.get('method');body=request.get('body') or {}
+    actor=request.get('actor') or {}
+    # Defense in depth for callers of the domain seam directly. Do not turn a
+    # guest/delegation origin into a clean owner actor in a nested dispatch.
+    if request.get('public') or actor.get('delegated') or actor.get('delegation_id') is not None or actor.get('browser_grant_id') is not None or actor.get('browser_session_id') is not None:
+        raise Problem('Only the installation owner can manage this Studio.',403)
     if path in ('admin/publish','admin/apply') and method=='POST' and (request.get('actor') or {}).get('scope') not in ('owner','agent'):
         raise Problem('Publishing needs a trusted owner confirmation.',403)
     if path in ('admin/draft','admin/publish','admin/apply') and method=='POST':

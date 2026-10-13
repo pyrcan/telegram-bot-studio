@@ -1,5 +1,6 @@
 """Synthetic stores and fake network only; no live credentials or Telegram writes."""
 import json
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,16 +30,9 @@ class ReconnectTests(unittest.TestCase):
  def transfer(self,slot=None,plan=None):
   body=plan or self.plan();return reconnect.commit(self.root,self.new,{**body,'verified_slot':slot if slot is not None else body['source_slot']})
  def test_deleted_duplicate_detected_before_secret_storage(self):
-  writes=[]
-  def api(path,body=None,method=None):
-   if path=='/api/apps/':return [{'id':18,'slug':'telegram-bridge-renamed','capability_contract':{'service':{'id':'telegram-bridge'}}}]
-   if path.endswith('/pairing.json'):return {'userId':77,'chatId':77}
-   if path=='/api/apps/18/service/bot-info':return {'id':2000}
-   writes.append(path);raise AssertionError('No secret write permitted')
-  def telegram(token,method):return {'id':1000,'is_bot':True,'username':'Fixture_bot'} if method=='getMe' else {'url':''}
-  with patch.object(connector,'call',side_effect=self.call),patch.object(connector,'api',side_effect=api),patch.object(connector,'telegram',side_effect=telegram):
-   with self.assertRaises(ValueError):connector.connect(self.new,self.row['epoch'],'123:synthetic_fixture_only_not_a_real_token')
-  self.assertEqual(writes,[])
+  with patch.object(connector,'put_key') as write:
+   self.assertEqual(self.prepare()['status'],'blocked')
+   write.assert_not_called()
   state=tg.public_state(self.root,self.new);self.assertEqual(state['state'],'reserved');self.assertEqual(state['reconnect']['source'],self.old)
   self.assertIn('deleted Studio entry',state['error']);self.assertNotIn('PRIVATE_OLD_SENTINEL',json.dumps(state))
  def test_transfer_slot_identity_atomic_and_data_not_copied(self):
@@ -87,17 +81,32 @@ class ReconnectTests(unittest.TestCase):
   self.assertNotIn('SENSITIVE_SENTINEL',json.dumps(tg.public_state(self.root,self.new)))
  def test_consumer_only_checks_identity_and_webhook_before_reconnect(self):
   calls=[]
-  def inspect(slot,method):
-   calls.append(method)
-   if method=='getMe':return {'id':1000,'is_bot':True,'username':'Fixture_bot'}
-   if method=='getWebhookInfo':return {'url':''}
-   self.fail('Unexpected call')
-  result=reconnect.reconnect(self.new,self.plan(),self.call,None,inspect=inspect)
-  self.assertEqual(result['state'],'verified');self.assertEqual(calls,['getMe','getWebhookInfo'])
+  def saved(secret,method,**kwargs):
+   calls.append((secret,method,kwargs))
+   return {'id':1000,'is_bot':True,'username':'Fixture_bot'} if method=='getMe' else {'url':''}
+  with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','API_BASE_URL':'http://127.0.0.1:1'},clear=True),patch('telegram_http.call_saved',side_effect=saved):
+   result=reconnect.reconnect(self.new,self.plan(),self.call,None)
+  self.assertEqual(result['state'],'verified');self.assertEqual([c[1] for c in calls],['getMe','getWebhookInfo'])
+  self.assertEqual({c[0] for c in calls},{'tg-1'})
  def test_wrong_stored_identity_never_transfers(self):
-  with self.assertRaises(ValueError):reconnect.reconnect(self.new,self.plan(),self.call,None,inspect=lambda *a:{'id':999,'is_bot':True,'username':'Other_bot'})
+  calls=[];reads=[]
+  def saved(secret,method,**kwargs):
+   reads.append(method)
+   return {'id':999,'is_bot':True,'username':'Other_bot'}
+  def call(path,body=None):calls.append(path);return self.call(path,body)
+  with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','API_BASE_URL':'http://127.0.0.1:1'},clear=True),patch('telegram_http.call_saved',side_effect=saved):
+   with self.assertRaises(ValueError):reconnect.reconnect(self.new,self.plan(),call,None)
+  self.assertEqual(reads,['getMe','getMe'])
+  self.assertFalse(any(path.endswith('/reconnect') for path in calls))
   self.assertIsNone(tg.connection(self.root,self.new)['bot_id'])
  def test_existing_webhook_never_removed_or_reassigned(self):
-  def inspect(slot,method):return {'id':1000,'is_bot':True,'username':'Fixture_bot'} if method=='getMe' else {'url':'https://example.com/hook'}
-  with self.assertRaises(ValueError):reconnect.reconnect(self.new,self.plan(),self.call,None,inspect=inspect)
+  calls=[];reads=[]
+  def saved(secret,method,**kwargs):
+   reads.append(method)
+   return {'id':1000,'is_bot':True,'username':'Fixture_bot'} if method=='getMe' else {'url':'https://example.invalid/hook'}
+  def call(path,body=None):calls.append(path);return self.call(path,body)
+  with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','API_BASE_URL':'http://127.0.0.1:1'},clear=True),patch('telegram_http.call_saved',side_effect=saved):
+   with self.assertRaises(ValueError):reconnect.reconnect(self.new,self.plan(),call,None)
+  self.assertEqual(reads,['getMe','getWebhookInfo'])
+  self.assertFalse(any(path.endswith('/reconnect') for path in calls))
   self.assertIsNone(tg.connection(self.root,self.new)['bot_id'])

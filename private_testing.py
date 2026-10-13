@@ -41,6 +41,13 @@ def stop(store):
     put(store,'private_test',{**value,'enabled':False})
 
 
+def quiesce_owner(live,owner):
+    """Do not carry queued published owner work across a private-mode switch."""
+    live.db.execute("UPDATE tasks SET status='cancelled',finished=? WHERE status IN ('queued','running') AND participant='owner-test' AND id IN (SELECT task_id FROM tg_requests)",(time.time(),))
+    live.db.execute("UPDATE tg_requests SET delivered=1 WHERE chat_id=?",(owner,))
+    live.db.execute("UPDATE tg_deliveries SET status='blocked' WHERE chat_id=? AND status IN ('pending','sending')",(owner,))
+
+
 def change(catalog,identity,body,operation):
     import telegram_store as tg
     from bot_lifecycle import generation
@@ -65,9 +72,7 @@ def change(catalog,identity,body,operation):
                     if old.get('current') and conn['state'] in ('testing','active'):
                         return old
                     stop(live)
-                    live.db.execute("UPDATE tasks SET status='cancelled',finished=? WHERE status IN ('queued','running') AND participant='owner-test' AND id IN (SELECT task_id FROM tg_requests)",(time.time(),))
-                    live.db.execute("UPDATE tg_requests SET delivered=1 WHERE chat_id=?",(conn['owner_user_id'],))
-                    live.db.execute("UPDATE tg_deliveries SET status='blocked' WHERE chat_id=? AND status IN ('pending','sending')",(conn['owner_user_id'],))
+                    quiesce_owner(live,conn['owner_user_id'])
                     epoch=uid()[:12]
                     with open_test(live,epoch) as test:
                         tg.schema(test)
@@ -142,7 +147,7 @@ def consume(live,conn):
                 tg.schema(test)
                 if update.get('callback_query'):
                     update['callback_query']['data']=update['callback_query']['data'].removeprefix('p:'+target+':')
-                tg.ingest(test,[update]);tg.consume(test,conn['owner_user_id']);handled=True
+                tg.ingest(test,[update]);tg.consume(test,conn['owner_user_id'],metrics_store=live,metrics_mode='test');handled=True
         if not handled and update.get('callback_query') and private_user(update)==conn['owner_user_id']:
             # Old inline controls must neither act in another deployment nor
             # leave Telegram's spinner hanging. Fresh commands open this mode.

@@ -115,7 +115,7 @@ class CustomizationTests(unittest.TestCase):
         self.assertEqual(len(created),2);self.assertNotEqual(created[0],created[1])
     def test_action_denies_app_job(self):
         from owner_action import execute
-        with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','APP_TOKEN':'synthetic'}):
+        with patch.dict(os.environ,{'APP_OWNER_ACTION':'1','APP_TOKEN':'synthetic'}):
             with self.assertRaises(ValueError):execute({'action':'customize-bot','context':{'assistant':'pocket-notes'},'fields':{}})
 
 class ConversationTests(unittest.TestCase):

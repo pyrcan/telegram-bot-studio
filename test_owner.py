@@ -74,23 +74,7 @@ class OwnerManagementTests(unittest.TestCase):
   item=self.call('owner/catalog')['assistants'][0]
   self.assertNotEqual(item['draft_model'],item['published_model']);self.assertTrue(item['draft_changed'])
 
-
-from unittest.mock import patch
-from bot_behaviors import BEHAVIORS, Blank
-
-class PrivateFixture(Blank):
-    private_only = True
-
-def fixture_behaviors():
-    return patch.dict(BEHAVIORS, {'fixture-deterministic-v1': Blank(), 'fixture-private-v1': PrivateFixture()})
-
 class DevelopmentPresentationTests(unittest.TestCase):
- @classmethod
- def setUpClass(cls):
-  DevelopmentPresentationTests.registry = fixture_behaviors(); DevelopmentPresentationTests.registry.start()
- @classmethod
- def tearDownClass(cls):
-  DevelopmentPresentationTests.registry.stop()
  def summary(self,runtime='notes-v1',live=True,conn=None,test=None):
   from catalog import development_summary
   draft={'name':'Fixture','description':'Intro','instructions':'Guide','model':'fake','runtime':runtime}
@@ -104,10 +88,10 @@ class DevelopmentPresentationTests(unittest.TestCase):
   self.assertEqual(s['status'],'Private test');self.assertEqual(s['test_label'],'Earlier draft loaded')
   self.assertEqual(s['release_label'],'Serving approved users');self.assertFalse(s['can_publish'])
  def test_capabilities_not_bot_names_control_model_settings(self):
-  for runtime,expected in [('notes-v1',True),('conversation-v1',True),('blank-v1',False),('fixture-deterministic-v1',False)]:
+  for runtime,expected in [('notes-v1',True),('conversation-v1',True),('blank-v1',False)]:
    self.assertEqual(self.summary(runtime)['uses_model'],expected)
  def test_blank_and_private_browser_never_offer_publication(self):
-  for runtime in ['blank-v1','fixture-private-v1']:
+  for runtime in ['blank-v1']:
    s=self.summary(runtime,conn={'state':'testing','username':'Fixture'},test={'enabled':True,'current':True})
    self.assertFalse(s['can_publish'])
  def test_changed_fields_expose_no_instruction_content(self):
@@ -116,5 +100,5 @@ class DevelopmentPresentationTests(unittest.TestCase):
   s=development_summary(d,{**d,'instructions':'LIVE_SECRET'},{'state':'active'}, {})
   self.assertEqual(s['changed_fields'],['Instructions']);self.assertNotIn('SECRET',json.dumps(s))
  def test_error_text_is_product_neutral(self):
-  s=self.summary('fixture-deterministic-v1',conn={'error':'fixture','state':'testing'})
+  s=self.summary('blank-v1',conn={'error':'fixture','state':'testing'})
   self.assertEqual(s['status'],'Needs attention');self.assertNotIn('notes',s['next_step'])

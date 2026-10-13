@@ -51,3 +51,11 @@ fork-session.sh
 # Defensive: the integer-id storage tree is a sibling dir, but if a
 # numeric data dir ever lands here it is runtime data, not source.
 [0-9]*/
+
+# Local test environments and SQLite fixtures are never release source.
+.venv/
+venv/
+*.db
+*.db-*
+data/
+.tmp/

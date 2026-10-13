@@ -128,6 +128,9 @@ class TelegramTests(unittest.TestCase):
   self.activate();self.handle(1,'a note');calls=[]
   def fake(*args):calls.append(args);return {'message_id':5}
   deliver(self.store,self.store,self.identity,fake);deliver(self.store,self.store,self.identity,fake);self.assertEqual(len(calls),1)
+  timing=tg.public_state(self.store,self.identity)['timing']['delivery']
+  self.assertGreaterEqual(timing['outbox_ms'],0);self.assertGreaterEqual(timing['send_ms'],0)
+  self.assertNotIn('a note',json.dumps(timing))
  def test_ambiguous_delivery_not_repeated(self):
   self.activate();self.handle(1,'a note');calls=[]
   def fake(*args):calls.append(args);raise TelegramError()
@@ -162,22 +165,24 @@ class TelegramTests(unittest.TestCase):
   with self.assertRaises(Problem):self.store.apply_definition(d,revision)
 
 
-class TelegramTransportContractTests(unittest.TestCase):
- def test_job_uses_only_named_slot_and_keeps_parameters(self):
+class TelegramGatewayContractTests(unittest.TestCase):
+ def test_own_job_slot_poll_options_pass_as_data(self):
   import os
   from unittest.mock import patch
   import telegram_transport as transport
-  values={'offset':42,'timeout':5,'allowed_updates':['message']}
-  with patch.dict(os.environ,{'API_BASE_URL':'http://localhost:8080','APP_ID':'24','APP_TOKEN':'synthetic-scoped-token'}),patch.object(transport,'call_saved',return_value=[]) as call:
-   self.assertEqual(transport.call(1,'getUpdates',values),[])
-   call.assert_called_once_with('tg-1','getUpdates',values,app_id='24',bearer='synthetic-scoped-token',api_base='http://localhost:8080')
- def test_invalid_slot_never_reads_any_secret(self):
+  params={'offset':42,'timeout':5,'allowed_updates':['message']}
+  with patch.dict(os.environ,{'API_BASE_URL':'http://localhost:8080','APP_ID':'24','APP_TOKEN':'synthetic-scoped-token'}),patch.object(transport,'call_saved',return_value=[]) as saved:
+   self.assertEqual(transport.call(1,'getUpdates',params),[])
+   saved.assert_called_once_with('tg-1','getUpdates',params,app_id='24',bearer='synthetic-scoped-token',api_base='http://localhost:8080')
+ def test_own_job_reply_unicode_and_keyboard_pass_without_url_encoding(self):
+  import os
   from unittest.mock import patch
   import telegram_transport as transport
-  for slot in (0,9,True,'../owner'):
-   with patch.object(transport,'call_saved') as call:
-    with self.assertRaises(transport.TelegramError):transport.call(slot,'getMe')
-    call.assert_not_called()
+  keyboard={'keyboard':[[{'text':'Ask notes'}]],'resize_keyboard':True}
+  params={'chat_id':7,'text':'A & B? café','reply_markup':keyboard}
+  with patch.dict(os.environ,{'API_BASE_URL':'http://localhost:8080','APP_ID':'24','APP_TOKEN':'synthetic-scoped-token'}),patch.object(transport,'call_saved',return_value={'message_id':9}) as saved:
+   self.assertEqual(transport.call(1,'sendMessage',params),{'message_id':9})
+   self.assertEqual(saved.call_args.args,('tg-1','sendMessage',params))
 
 class PollHealthTests(unittest.TestCase):
  def test_management_health_contains_only_transport_shape_and_timing(self):
@@ -224,3 +229,12 @@ class ConcurrentDeliveryTests(unittest.TestCase):
   for thread in threads:thread.join(4);self.assertFalse(thread.is_alive())
   self.assertEqual(errors,[]);self.assertEqual(calls,['sendMessage'])
   self.assertEqual(self.store.db.execute("SELECT status FROM tg_deliveries WHERE id='u1:0'").fetchone()[0],'sent')
+
+class InvalidSlotTests(unittest.TestCase):
+ def test_invalid_slot_never_reads_any_secret(self):
+  from unittest.mock import patch
+  import telegram_transport as transport
+  for slot in (0,9,True,'../owner'):
+   with patch.object(transport,'call_saved') as call:
+    with self.assertRaises(transport.TelegramError):transport.call(slot,'getMe')
+    call.assert_not_called()

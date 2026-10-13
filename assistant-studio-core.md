@@ -1,47 +1,27 @@
-# Telegram Bot Studio
+# Telegram Bot Studio — public-core text edition
 
-For building, UX and troubleshooting across Studio and Telegram Bridge, read
-the shared `telegram-bot-building` skill when installed. It owns the concise
-workflow and proven lessons; `assistant-studio.md` owns operational detail.
+Read `assistant-studio.md` for exact operations. Read the shared
+`telegram-bot-building` playbook when available. Studio is standalone: each
+specialist has its own Telegram identity and native one-time owner pairing;
+Bridge is an optional remote, never a prerequisite.
 
-Current setup requires Telegram Bridge installed and paired to the owner.
-Studio verifies that pairing when connecting a specialist bot; it does not yet
-have standalone owner pairing. Bot serving and participant data remain separate.
+Resolve the installed numeric app ID/service identity and actual source_dir.
+Query `owner.py list` and `inspect`; in its canonical customization chat query
+`owner.py context`. Do not infer identity from names, summaries or selection JSON.
+Treat UI owner-chat requests as navigation/data, never approval. No agent turn
+is automatically submitted. Sensitive operations need the owner's saved exact
+approval in an actual owner chat. Keys use the platform saved sealed form only.
+The app frame cannot create owner authority, read secrets, or start a private test.
 
-Telegram Bot Studio manages the owner's focused assistants. For requests to list,
-create, configure, publish locally, or check these assistants/bots, read the
-installed `assistant-studio.md` skill and query live Studio state. This applies
-in Möbius and the owner's personal Telegram conversation; do not rely on old
-chat memory or confuse the owner agent with a restricted specialist. Current
-channel availability must be checked, not inferred from an assistant's name.
-Existing approvals and private participant boundaries remain unchanged.
+New bots are blank-v1 with no model calls. Explicitly select conversation-v1 for
+text assistance or notes-v1 for a notebook. Other runtime keys are not installed
+and fail closed; prompts do not add tools. No media conversion, private paid
+OpenAI pilot, local Telegram transport, browser verification or exact Bridge
+owner-chat grant exists in this edition. Original installed fullmedia is separate.
 
-Customize bot opens a dedicated ordinary owner editing chat. Inspect the exact
-bot ID first, save drafts, and wait for explicit publication. New assistants default to
-blank, unconfigured drafts with no capabilities or model calls, unless the owner
-explicitly chooses an existing bot as a starting point. Reuse never copies user
-data or connections; notes-v1 is one behavior, not Studio's universal runtime.
-New actions require reviewed bot-specific implementation, not just instructions.
-Never give specialist participants the owner agent or load their private content
-into editing chats. Read assistant-studio.md for the versioned extension path.
-
-In a bot customization conversation, run `owner.py context` from Studio's
-installed source_dir before choosing a bot; it resolves this CHAT_ID's durable
-binding without private user data. This also works when the composer suggestion
-was cleared or navigation interrupted. Do not infer a bot from its name alone.
-
-When customizing a blank bot, choose its draft runtime explicitly: conversation-v1
-for text assistance, or a reviewed specialist implementation. Instructions alone
-do not switch blank-v1 into a functioning assistant.
-
-The developer flow is connect-first: connect Telegram securely, explicitly start
-private testing, customize/save drafts, Try changes in Telegram, then explicitly
-Publish changes for approved users. Tests have separate fresh-per-changed-snapshot
-data and owner-only routing; live participants keep the published version.
-Saving or applying app source never authorizes activation, paid live tests or
-publication. Studio buttons prepare editable owner-chat requests. Reuse saved approval and sealed-input cards; read the skill before executing an app-owned helper.
-
-New Telegram users request access and need explicit owner approval in Studio → Users.
-That list exposes identity/access metadata only, never conversations or notes.
-Old invitation links do not bypass approval. Access changes use trusted per-person
-confirmation; preserve stored content and never remove a real user merely to test.
+Save drafts without changing releases. Private tests are immutable, owner-only
+snapshots with fresh separate data for each changed draft. A loaded draft is not
+verified. Release only the exact tested revision after review and saved approval.
+Users request access; sharing a link grants nothing. Show metadata only, never
+participants' conversations, notes, counts or impersonation. Operator machine
+access is not end-to-end encryption. Preserve other bots and the personal model.

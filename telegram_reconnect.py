@@ -18,7 +18,7 @@ def _plan(root,identity,source,selected):
     old=root.db.execute('SELECT * FROM telegram_connections WHERE assistant=?',(source,)).fetchone()
     tombstone=root.db.execute('SELECT * FROM assistant_lifecycle WHERE id=?',(source,)).fetchone()
     lifecycle=root.db.execute('SELECT * FROM assistant_lifecycle WHERE id=?',(identity,)).fetchone()
-    if not old or not tombstone or tombstone['deleted_at'] is None or old['state']!='deleted' or not old['bot_id']:
+    if not old or not tombstone or tombstone['deleted_at'] is None or old['state']!='deleted' or not old['bot_id'] or not old['owner_user_id']:
         raise Problem('That connection is no longer held by a deleted bot.',409)
     if identity==source or (lifecycle and lifecycle['deleted_at'] is not None) or not target or target['state']!='reserved' or target['bot_id'] or selected.config('deployed'):
         raise Problem('Reconnect only to a disconnected, unpublished bot.',409)
@@ -54,29 +54,24 @@ def commit(root,identity,body):
     return tg.public_state(root,identity)
 
 
-def reconnect(identity,context,call,api,inspect=None):
+def reconnect(identity,context,call,api):
     """Trusted owner consumer; only read-only Telegram checks before commit."""
+    import os
+    from telegram_http import call_saved
+    if not os.environ.get('AGENT_TOKEN') or os.environ.get('APP_TOKEN'):
+        raise ValueError('Actual approved owner chat required')
     current=call(f'assistants/{identity}/telegram/reconnect-plan',{'source':context.get('source')})
     if any(context.get(k)!=current[k] for k in FIELDS):raise ValueError('Reopen this reconnect confirmation')
-    app_id=call('owner/catalog')['app_id']
-    if inspect is None:
-        import os
-        from connect_telegram import owner_bearer
-        from telegram_http import call_saved
-        def inspect(slot,method):
-            return call_saved(f'tg-{slot}',method,app_id=app_id,
-                bearer=owner_bearer(),api_base=os.environ['API_BASE_URL'])
-    valid=None
+    app_id=call('owner/catalog')['app_id'];valid=None
+    def check(slot,method):
+        return call_saved(f'tg-{slot}',method,app_id=app_id,
+            bearer=os.environ['AGENT_TOKEN'],api_base=os.environ['API_BASE_URL'])
     for slot in dict.fromkeys((current['source_slot'],current['target_slot'])):
-        try:
-            bot=inspect(slot,'getMe')
-        except Exception:
-            # Provider failures can contain credential-bearing URLs. Never expose
-            # or persist their text; only try the other already-stored slot.
-            continue
-        if not bot.get('is_bot') or bot.get('id')!=current['bot_id'] or bot.get('username','').lower()!=current['bot'].lower():continue
-        hook=inspect(slot,'getWebhookInfo')
-        if hook.get('url'):raise ValueError('Bot is managed elsewhere')
+        try:bot=check(slot,'getMe')
+        except Exception:continue
+        if not isinstance(bot,dict) or not bot.get('is_bot') or bot.get('id')!=current['bot_id'] or bot.get('username','').lower()!=current['bot'].lower():continue
+        hook=check(slot,'getWebhookInfo')
+        if not isinstance(hook,dict) or hook.get('url'):raise ValueError('Bot is managed elsewhere')
         valid=slot;break
     if valid is None:raise ValueError('The stored connection could not be verified')
     return call(f'assistants/{identity}/telegram/reconnect',{**{k:current[k] for k in FIELDS},'verified_slot':valid})

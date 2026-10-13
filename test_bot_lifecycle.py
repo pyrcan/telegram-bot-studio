@@ -55,6 +55,13 @@ class BotDeletionTests(unittest.TestCase):
             self.assertFalse(selected.config('bot_deleted',False))
             self.assertEqual(selected.db.execute('SELECT status FROM tasks WHERE id=?',(task['id'],)).fetchone()[0],'queued')
 
+    def test_capacity_counts_reserved_and_deleted_connections(self):
+        self.assertEqual(self.catalog.listing()['connection_capacity'], {'used': 0, 'limit': tg.MAX_CONNECTIONS})
+        self.connect(self.child)
+        self.assertEqual(self.catalog.listing()['connection_capacity']['used'], 1)
+        change(self.catalog,self.child,self.body(self.child))
+        self.assertEqual(self.catalog.listing()['connection_capacity']['used'], 1)
+
     def test_active_bot_stops_and_stale_activation_cannot_revive(self):
         c=self.connect(self.child);body=self.body(self.child)
         change(self.catalog,self.child,body)
@@ -137,10 +144,10 @@ class BotDeletionTests(unittest.TestCase):
     def test_owner_action_uses_exact_selected_identity_and_context(self):
         from owner_action import execute
         context={'assistant':self.child,'operation':'delete',**self.body(self.child)}
-        with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner'}),patch('owner_action.call') as call:
+        with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','CHAT_ID':'synthetic-chat'},clear=True),patch('owner_action.call') as call:
             with patch.dict(os.environ,{},clear=False):
                 old=os.environ.pop('APP_TOKEN',None)
-                try:execute({'action':'bot-lifecycle','context':context,'fields':{}})
+                try:execute({'action':'bot-lifecycle','context':context})
                 finally:
                     if old is not None:os.environ['APP_TOKEN']=old
             call.assert_called_once_with(f'assistants/{self.child}/admin/delete',context)

@@ -28,6 +28,8 @@ def development_summary(draft, live, connection, test):
     connected = bool(connection.get('username'))
     if connection.get('error'):
         status, next_step = 'Needs attention', 'Review the connection. Your saved data is unchanged.'
+    elif state == 'pairing':
+        status, next_step = 'Pair owner', 'Send a one-time code to this bot from your private Telegram account.'
     elif enabled:
         status = 'Private test'
         next_step = 'Latest draft loaded. Open Telegram to test it.' if current else 'Saved changes are not in your test yet.'
@@ -45,6 +47,9 @@ def development_summary(draft, live, connection, test):
     changed = [title for key,title in fields if live is None or draft.get(key) != live.get(key)]
     return {'status': status, 'next_step': next_step, 'behavior_label': label,
             'uses_model': uses_model,
+            'private_only': bool(getattr(impl,'private_only',False)),
+            'published_provider': ('OpenAI Codex' if live and (behavior(live) is None or getattr(behavior(live),'uses_model',False)) else 'No AI'),
+            'test_provider': ('OpenAI Codex' if current and uses_model else 'No AI' if current else 'Earlier test runtime') if enabled else 'Not running',
             'test_label': ('Latest draft loaded' if current else 'Earlier draft loaded') if enabled else 'Not running',
             'release_label': ('Serving approved users' if state == 'active' else 'Published · replies paused') if live else 'Not published',
             'draft_label': 'Unpublished changes' if changed else 'Matches published version',
@@ -56,6 +61,7 @@ def onboarding_preview(definition):
     """Same copy as Telegram's published profile and first admitted /start."""
     from telegram_onboarding import DESCRIPTION, welcome
     impl = behavior(definition)
+    if getattr(impl,'notebook',False):impl=None
     return {'description': definition['description'] if impl else DESCRIPTION,
             'welcome': impl.welcome(definition) if impl else welcome(definition['name'])}
 
@@ -164,12 +170,20 @@ class Catalog:
               'editing_chat':store.config('editing_chat'),
               'starter':starter_snapshot(identity,live or draft,version,generation(self.root,identity)),
               'based_on':store.config('based_on'),
-              'private_test':test,
+              'display':__import__('bot_identity').read(self.root,identity,draft),
+              # Navigation readers (including Bridge) never receive permit,
+              # spending-plan or execution metadata from the private store.
+              'private_test':{k:v for k,v in test.items() if k in ('enabled','epoch','revision','created','current')},
               'development':development_summary(draft,live,conn,test),
               'release_review':release_review(draft),
               'onboarding':onboarding_preview(live or draft)}
 
     def listing(self):
+        from telegram_store import MAX_CONNECTIONS
+        assistants=[item for item in (self.summary(identity) for identity in self.ids()) if not item['deleted']]
         return {'app_id': int(__import__('os').environ.get('APP_ID','0')),
-          'assistants':[item for item in (self.summary(identity) for identity in self.ids()) if not item['deleted']],
+          'navigation_contract': 'owner-metadata-v1',
+          'assistants':assistants,
+          'connection_capacity':{'used':self.root.db.execute('SELECT count(*) FROM telegram_connections').fetchone()[0],
+                                 'limit':MAX_CONNECTIONS},
           'deleted':[dict(row) for row in self.root.db.execute('SELECT id,name,generation,deleted_at FROM assistant_lifecycle WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC')]}

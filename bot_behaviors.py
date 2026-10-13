@@ -93,7 +93,7 @@ class Conversation:
         return runner(prompt,definition['model'],alive=lambda:store.task_live(task['id'])), []
 
 # Explicit registration only. Add versioned owner-reviewed implementations here.
-BEHAVIORS = {'blank-v1': Blank(), 'conversation-v1': Conversation()}
+BEHAVIORS={'blank-v1':Blank(),'conversation-v1':Conversation()}
 
 def behavior(definition):
     name=definition.get('runtime','notes-v1')
@@ -113,4 +113,4 @@ def configure(definition, body):
 def require_publishable(definition):
     if getattr(behavior(definition), 'private_only', False):
         from assistant_store import Problem
-        raise Problem('This browser prototype is private-test-only. Guest support needs a separately reviewed version.',409)
+        raise Problem('This runtime is private-test-only.',409)

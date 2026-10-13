@@ -1,7 +1,7 @@
 """Private Telegram deployment state and durable intake/delivery boundaries.
 
 Connection metadata is not a credential. Bot credentials live only in the
-platform's encrypted app-secret store, read only by the approved app job/service.
+platform's encrypted app-secret store, behind one of eight reviewed providers.
 """
 import hashlib
 import json
@@ -32,6 +32,7 @@ def schema(store):
     for table,column,declaration in (
         ('telegram_connections','setup',"TEXT NOT NULL DEFAULT '{}'"),
         ('telegram_connections','poll_health',"TEXT NOT NULL DEFAULT '{}'"),
+        ('telegram_connections','timing',"TEXT NOT NULL DEFAULT '{}'"),
         ('tg_updates','destination',"TEXT NOT NULL DEFAULT 'live'"),
         ('tg_deliveries','purpose',"TEXT NOT NULL DEFAULT ''"),
         ('tg_deliveries','context',"TEXT NOT NULL DEFAULT '{}'"),
@@ -63,7 +64,9 @@ def public_state(root,identity):
     if not row:return {'state':'not-connected'}
     result={k:row[k] for k in ('state','username','last_seen','error','epoch')}
     result['reconnect']=json.loads(row['setup']).get('reconnect')
+    if row['state']=='pairing':result['pairing_expires']=json.loads(row['setup']).get('pairing_expires')
     result['poll_health']=json.loads(row['poll_health'])
+    result['timing']=json.loads(row['timing'])
     with Catalog(root).open(identity,include_deleted=True) as selected:
         schema(selected)
         from telegram_menu import contract
@@ -71,6 +74,15 @@ def public_state(root,identity):
         from private_testing import owner_joined
         result['owner_joined']=owner_joined(selected,row['owner_user_id'])
     return result
+
+def record_timing(root,identity,stage,metrics):
+    """Last connection-level timings only; callers pass numbers, never content."""
+    with root.db:
+        root.db.execute('BEGIN IMMEDIATE')
+        row=root.db.execute('SELECT timing FROM telegram_connections WHERE assistant=?',(identity,)).fetchone()
+        if not row:return
+        timing=json.loads(row['timing']);timing[stage]={'at':round(time.time(),3),**metrics}
+        root.db.execute('UPDATE telegram_connections SET timing=? WHERE assistant=?',(json.dumps(timing),identity))
 
 def reserve(root,identity):
     if identity not in Catalog(root).ids():raise Problem('Bot not found.',404)
@@ -103,7 +115,7 @@ SETUP_ERRORS={
  'telegram-check':'Telegram could not verify this key. Check that it is current and try the secure form again.',
  'webhook':'This bot is connected to another service. Disconnect it there before connecting it here.',
  'owner-bridge':'Your personal Möbius bot cannot be used as a specialist bot.',
- 'owner-check':'Could not verify your paired owner account. Check the personal Telegram Bridge connection.',
+ 'owner-check':'Could not verify your owner account. Check this bot\u2019s private pairing status in Studio.',
  'save-failed':'Connection setup did not finish. Any saved key remains encrypted; no replies were enabled. Retry the secure form.',
  'duplicate-active':'This Telegram bot is already connected to another Studio bot. Manage that entry instead.',
  'duplicate-deleted':'This Telegram bot belongs to a deleted Studio entry. Restore the original entry below, or ask Möbius to move its connection here. Old data stays separate.',
@@ -122,7 +134,7 @@ def prepare_identity(root,identity,body):
     catalog=Catalog(root);schema(root)
     if identity not in catalog.ids():raise Problem('Bot not found.',404)
     bot_id=body.get('bot_id');owner=body.get('owner_user_id');username=body.get('username','')
-    if type(bot_id) is not int or bot_id<=0 or type(owner) is not int or owner<=0 or not re.fullmatch(r'[A-Za-z0-9_]{5,32}',username):raise Problem('Invalid bot identity.')
+    if type(bot_id) is not int or bot_id<=0 or (owner is not None and (type(owner) is not int or owner<=0)) or not re.fullmatch(r'[A-Za-z0-9_]{5,32}',username):raise Problem('Invalid bot identity.')
     with catalog.open(identity) as selected:
         with root.db:
             root.db.execute('BEGIN IMMEDIATE')
@@ -153,9 +165,50 @@ def verified(root,identity,body):
         root.db.execute("UPDATE telegram_connections SET bot_id=?,username=?,owner_user_id=?,state='verified',error=NULL WHERE assistant=? AND epoch=? AND state='checking'",(bot_id,username,owner,identity,row['epoch']))
     return connection(root,identity)
 
+def await_owner(root,identity,body):
+    """The key is saved, but no Telegram person has been admitted yet."""
+    with root.db:
+        n=root.db.execute("UPDATE telegram_connections SET state='pairing',error=NULL WHERE assistant=? AND epoch=? AND state='checking' AND owner_user_id IS NULL AND bot_id IS NOT NULL",(identity,body.get('epoch'))).rowcount
+    if not n:raise Problem('This setup step has changed. Reopen it.',409)
+    return {'state':'pairing'}
+
+def issue_pairing(root,identity,body):
+    """Only the owner UI sees the raw, high-entropy one-time code."""
+    raw=secrets.token_urlsafe(18)
+    now=time.time();expiry=now+600
+    with root.db:
+        root.db.execute('BEGIN IMMEDIATE')
+        row=root.db.execute('SELECT state,epoch FROM telegram_connections WHERE assistant=?',(identity,)).fetchone()
+        if not row or row['state']!='pairing' or body.get('epoch')!=row['epoch']:raise Problem('Pairing has changed. Refresh this bot.',409)
+        setup={'pairing_hash':hashlib.sha256(raw.encode()).hexdigest(),'pairing_expires':expiry,'pairing_issued':now}
+        root.db.execute('UPDATE telegram_connections SET setup=? WHERE assistant=?',(json.dumps(setup),identity))
+    return {'code':raw,'expires':expiry}
+
+def accept_pairing(root,identity,epoch,update):
+    """Telegram's verified private sender, not a claimed username, becomes owner."""
+    message=update.get('message') if isinstance(update,dict) else None
+    if not isinstance(message,dict):return False
+    user=message.get('from') or {};chat=message.get('chat') or {}
+    sender=user.get('id');text=message.get('text')
+    date=message.get('date')
+    if (type(sender) is not int or sender<=0 or user.get('is_bot') or chat.get('type')!='private'
+        or chat.get('id')!=sender or message.get('sender_chat') or not isinstance(text,str)
+        or type(date) is not int):return False
+    matched=re.fullmatch(r'/(?:pair|start)(?:@[A-Za-z0-9_]{5,32})? ([A-Za-z0-9_-]{24})',text.strip())
+    if not matched:return False
+    with root.db:
+        root.db.execute('BEGIN IMMEDIATE')
+        row=root.db.execute('SELECT state,epoch,setup FROM telegram_connections WHERE assistant=?',(identity,)).fetchone()
+        if not row or row['state']!='pairing' or row['epoch']!=epoch:return False
+        setup=json.loads(row['setup']);now=time.time()
+        if (setup.get('pairing_expires',0)<now or date<setup.get('pairing_issued',now)-5
+            or not secrets.compare_digest(hashlib.sha256(matched[1].encode()).hexdigest(),setup.get('pairing_hash',''))):return False
+        root.db.execute("UPDATE telegram_connections SET owner_user_id=?,state='verified',setup='{}',error=NULL WHERE assistant=? AND epoch=? AND state='pairing'",(sender,identity,epoch))
+    return True
+
 def activate(root,identity,body):
     row=connection(root,identity)
-    if not row or row['state'] not in ('verified','paused','active') or body.get('epoch')!=row['epoch']:raise Problem('Check this bot connection before activating it.',409)
+    if not row or row['state'] not in ('verified','paused','active') or type(row['owner_user_id']) is not int or row['owner_user_id']<=0 or body.get('epoch')!=row['epoch']:raise Problem('Check this bot connection before activating it.',409)
     with Catalog(root).open(identity) as store:
         store.definition()  # A reviewed local release must exist first.
         schema(store)
@@ -165,8 +218,9 @@ def activate(root,identity,body):
     return public_state(root,identity)
 
 def pause(root,identity):
-    if not connection(root,identity):raise Problem('Bot is not connected.',409)
-    with root.db:root.db.execute("UPDATE telegram_connections SET state='paused' WHERE assistant=? AND state!='deleted'",(identity,))
+    row=connection(root,identity)
+    if not row or row['state'] not in ('verified','paused','active','testing'):raise Problem('Bot is not ready to pause.',409)
+    with root.db:root.db.execute("UPDATE telegram_connections SET state='paused' WHERE assistant=? AND state IN ('verified','paused','active','testing')",(identity,))
     with Catalog(root).open(identity) as store:
         schema(store)
         from private_testing import stop
@@ -354,7 +408,7 @@ def wants_answer(text,command,mode):
     prose=re.sub(r'https?://[^\s<>]+','',text,flags=re.I).strip()
     return '?' in prose or bool(re.match(r'^(what|where|when|which|how|find|summari[sz]e|recall)\b',prose,re.I))
 
-def handle_update(store,update,owner_id):
+def handle_update(store,update,owner_id,*,metrics_store=None,metrics_mode='live'):
     if store.config('bot_deleted',False):return
     mid=update['update_id'];callback=update.get('callback_query')
     msg=(callback.get('message') if callback else update.get('message')) or {}
@@ -371,11 +425,18 @@ def handle_update(store,update,owner_id):
         reply(store,f'u{mid}',chat_id,message);return
     from bot_behaviors import behavior
     impl=behavior(store.definition())
+    notebook_behavior=impl is None or getattr(impl,'notebook',False)
+    if getattr(impl,'notebook',False) and getattr(impl,'private_only',False):
+        marker=store.config('test_identity')
+        if not isinstance(marker,dict) or marker.get('owner')!=user_id or owner_id!=user_id:
+            # Defensive ingress guard in addition to lifecycle publication and
+            # worker execution gates; never collect a guest/live pilot notebook.
+            return
     if callback:
         text={'pn:save':'Save note','pn:ask':'Ask notes','pn:digest':'/notes'}.get(callback.get('data'))
         if not isinstance(callback.get('id'),str):return
         queue_delivery(store,f'cb{mid}',chat_id,{'callback_query_id':callback['id']},'answerCallbackQuery')
-        if impl:text=''
+        if not notebook_behavior:text=''
         elif text is None:
             from telegram_notes import ACTIONS
             if str(callback.get('data',''))[3:].split(':')[0] not in ACTIONS or not str(callback.get('data','')).startswith('pn:'):return
@@ -396,11 +457,14 @@ def handle_update(store,update,owner_id):
     # Do not import messages sent before this access period into a newly
     # approved/re-enabled conversation (Telegram timestamps have second precision).
     if type(msg.get('date')) in (int,float) and msg['date']<int(m['access_since']):return
+    from analytics import observe
+    observe(metrics_store if metrics_store is not None else store,'intake',mid,
+            {'interactions':1,'callbacks':int(bool(callback))},mode=metrics_mode)
     username=str(user.get('username') or '')[:32]
     if username!=m['username']:
         with store.db:store.db.execute('UPDATE tg_members SET username=? WHERE user_id=?',(username,user_id))
     participant=m['participant'];key=f'telegram:{mid}'
-    if impl:
+    if not notebook_behavior:
         impl.handle(store,participant,update,msg,callback,text,command)
         return
     import telegram_notebook as notebook
@@ -500,10 +564,10 @@ def handle_update(store,update,owner_id):
         with store.db:store.db.execute('UPDATE tg_members SET mode=NULL WHERE user_id=?',(user_id,))
     except Problem as exc:reply(store,f'u{mid}',chat_id,str(exc))
 
-def consume(store,owner_id):
+def consume(store,owner_id,*,metrics_store=None,metrics_mode='live'):
     rows=store.db.execute("SELECT * FROM tg_updates WHERE status='pending' ORDER BY id LIMIT 20").fetchall()
     for row in rows:
-        handle_update(store,json.loads(row['body']),owner_id)
+        handle_update(store,json.loads(row['body']),owner_id,metrics_store=metrics_store,metrics_mode=metrics_mode)
         with store.db:store.db.execute("UPDATE tg_updates SET status='done',body='{}' WHERE id=?",(row['id'],))
     return bool(rows)
 

@@ -1,8 +1,8 @@
 {
   "id": "assistant-studio",
   "name": "Telegram Bot Studio",
-  "version": "0.1.0",
-  "description": "Build, privately test and manage Telegram bots. Requires Telegram Bridge paired to your owner account for setup; each bot serves its users separately.",
+  "version": "0.2.0",
+  "description": "Build isolated text bots and notebooks; approve secure setup, private tests, releases and user access in your owner chat.",
   "entry": "index.jsx",
   "icon": "icon.png",
   "offline_capable": false,
@@ -24,38 +24,47 @@
     "access": "apps"
   },
   "source_files": [
-    "owner-handoff.js",
-    "telegram_http.py",
-    "assistant_store.py",
-    "service.py",
-    "worker.py",
-    "text_runner.py",
-    "events.py",
-    "catalog.py",
-    "owner.py",
+    "COMPATIBILITY.md",
+    "DEPENDENCIES.md",
+    "LICENSE",
+    "README.md",
+    "analytics.py",
     "assistant-studio-core.md",
     "assistant-studio.md",
-    "simple-theme.js",
-    "telegram_store.py",
-    "telegram_transport.py",
+    "assistant_store.py",
+    "bot-identity.jsx",
+    "bot_behaviors.py",
+    "bot_identity.py",
+    "bot_lifecycle.py",
+    "catalog.py",
     "connect_telegram.py",
-    "setup_telegram.py",
+    "cost-setup.jsx",
+    "cost_settings.py",
+    "dashboard.jsx",
+    "editing_chat.py",
+    "events.py",
     "link_metadata.py",
     "note_management.py",
-    "telegram_notes.py",
-    "owner_action.py",
     "note_views.py",
-    "telegram_notebook.py",
-    "telegram_menu.py",
-    "telegram_onboarding.py",
-    "bot_behaviors.py",
-    "editing_chat.py",
-    "bot_lifecycle.py",
+    "owner-handoff.js",
+    "owner.py",
+    "owner_action.py",
     "private_testing.py",
+    "requirements.lock",
+    "service.py",
+    "setup_spec.py",
+    "setup_telegram.py",
+    "simple-theme.js",
+    "telegram_http.py",
+    "telegram_menu.py",
+    "telegram_notebook.py",
+    "telegram_notes.py",
+    "telegram_onboarding.py",
     "telegram_reconnect.py",
-    "README.md",
-    "LICENSE",
-    "TESTING.md"
+    "telegram_store.py",
+    "telegram_transport.py",
+    "text_runner.py",
+    "worker.py"
   ],
   "schedule": {
     "default": "* * * * *",
@@ -67,18 +76,31 @@
   "skills": [
     "assistant-studio.md"
   ],
-  "package_id": "urn:uuid:0038fdf5-a9d5-44c7-a2e1-5a98879d41fe",
-  "author": "pyrcan",
-  "license": "MIT",
+  "python": {
+    "lock": "requirements.lock"
+  },
   "store": {
-    "tagline": "Build a bot. Test privately. Share when ready.",
-    "description": "Create focused Telegram bots in Möbius, customize their behavior in an owner editing chat, try draft changes privately and publish a tested version for approved users. Requires Telegram Bridge installed and paired before connecting a bot. Each specialist needs a separate Telegram identity; Bridge remains your personal Möbius channel. Customization opens in Möbius. An optional, explicitly approved Bridge connection lets you manage user access from Telegram. Installation does not activate bots, approve users or publish your private content. This core edition includes text assistants and a personal notebook, not experimental media converters. AI replies require a connected Codex account and an available configured model; usage limits and charges follow that account. Generated images open in Möbius after sign-in rather than being sent to Telegram; set the Möbius address in Bridge for navigation links. Requires updated Möbius with the supervised-job secret permission released on 29 September 2026 (PR #1565). Update Möbius before connecting a bot.",
+    "tagline": "Text bots and notebooks \u2014 build privately, approve releases explicitly.",
+    "description": "Create focused Telegram text assistants and personal notebooks. Start blank or reuse a bot\u2019s behavior without copying its users or connections. Pair each bot independently, save drafts, try an isolated private test and approve the exact release. People request access; you decide who can use each bot. Participant conversations and notes stay separate from owner editing chats. Pause bots and recover deleted entries without erasing their data.\n\nSensitive setup, private-test starts, releases and access changes use your M\u00f6bius owner chat. Keys use sealed input, never chat text. Compatible with the public M\u00f6bius platform; a connected, confined Codex runner is needed for text assistance. Telegram Bridge is optional.\n\nThis Community edition supports blank, text and notebook bots. It does not include media conversion, browser verification, paid OpenAI pilots, large-file local Telegram transport or direct Bridge customization-chat grants. YouTube notebook links store public metadata only. Installing it does not migrate or change another installed edition. Original app code is MIT licensed; dependency terms are retained. Screenshots use fictional data.",
     "screenshots": [
       {
-        "src": "static/store/studio-core-store.png",
-        "alt": "Telegram Bot Studio showing the unconnected Pocket Notes starter and the Telegram Bridge prerequisite.",
-        "label": "Build separate bots in Studio"
+        "src": "static/store/your-bots.png",
+        "alt": "Studio bot list with a fictional notebook and an option to create a bot.",
+        "label": "Your bots"
+      },
+      {
+        "src": "static/store/build.png",
+        "alt": "Fictional notebook Build screen with draft and private-test controls; sensitive actions request owner-chat approval.",
+        "label": "Build privately"
+      },
+      {
+        "src": "static/store/users.png",
+        "alt": "Identity-only Users list with a fictional pending request; access changes need owner-chat approval.",
+        "label": "Approve access"
       }
     ]
-  }
+  },
+  "license": "MIT",
+  "author": "pyrcan",
+  "package_id": "urn:uuid:0038fdf5-a9d5-44c7-a2e1-5a98879d41fe"
 }

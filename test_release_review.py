@@ -1,27 +1,11 @@
 """Release projections: synthetic configuration, never Telegram or model traffic."""
 import tempfile
 import unittest
-from assistant_store import Store, DAILY_TASK_LIMIT, MAX_PENDING_TASKS
+from assistant_store import Store, Problem, DAILY_TASK_LIMIT, MAX_PENDING_TASKS
 from catalog import Catalog, release_review, onboarding_preview
 from bot_behaviors import CONVERSATION_DEFAULT, BLANK_DEFAULT
 
-
-from unittest.mock import patch
-from bot_behaviors import BEHAVIORS, Blank
-
-class PrivateFixture(Blank):
-    private_only = True
-
-def fixture_behaviors():
-    return patch.dict(BEHAVIORS, {'fixture-deterministic-v1': Blank(), 'fixture-private-v1': PrivateFixture()})
-
 class ReleaseReviewTests(unittest.TestCase):
- @classmethod
- def setUpClass(cls):
-  ReleaseReviewTests.registry = fixture_behaviors(); ReleaseReviewTests.registry.start()
- @classmethod
- def tearDownClass(cls):
-  ReleaseReviewTests.registry.stop()
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory(); self.root=Store(self.temp.name); self.catalog=Catalog(self.root)
   self.identity=self.catalog.create({'name':'Fixture','request_id':'fixture'})['id']
@@ -44,15 +28,14 @@ class ReleaseReviewTests(unittest.TestCase):
   self.assertEqual(value['pending_task_limit'],MAX_PENDING_TASKS)
   self.assertTrue(value['uses_model'])
   self.assertFalse(release_review({**BLANK_DEFAULT,'name':'Fixture'})['uses_model'])
-  self.assertFalse(release_review({**CONVERSATION_DEFAULT,'name':'Fixture','runtime':'fixture-deterministic-v1'})['uses_model'])
+  with self.assertRaises(Problem):release_review({**CONVERSATION_DEFAULT,'name':'Fixture','runtime':'youtube-telegram-ux-v3'})
  def test_notes_preview_matches_telegram_profile_and_welcome(self):
   from telegram_onboarding import DESCRIPTION,welcome
   value=onboarding_preview(self.root.config('draft'))
   self.assertEqual(value['description'],DESCRIPTION)
   self.assertEqual(value['welcome'],welcome(self.root.config('draft')['name']))
  def test_private_prototype_remains_explicitly_private(self):
-  value=release_review({**CONVERSATION_DEFAULT,'name':'Fixture','runtime':'fixture-private-v1'})
-  self.assertTrue(value['private_only'])
+  with self.assertRaises(Problem):release_review({**CONVERSATION_DEFAULT,'name':'Fixture','runtime':'youtube-browser-mp3-v1'})
  def test_preview_has_no_mutating_side_effects(self):
   with self.catalog.open(self.identity) as store:
    before=store.db.total_changes

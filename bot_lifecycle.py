@@ -66,7 +66,7 @@ def change(catalog, identity, body, *, restore=False):
                 root.db.execute('INSERT OR REPLACE INTO assistant_lifecycle(id,generation,deleted_at,name) VALUES (?,?,?,?)',
                                 (identity,current+1,None if restore else time.time(),name))
                 if conn:
-                    state=('paused' if conn['bot_id'] else 'reserved') if restore else 'deleted'
+                    state=(('paused' if conn['owner_user_id'] else 'pairing') if conn['bot_id'] else 'reserved') if restore else 'deleted'
                     # Old activation/setup confirmations cannot reactivate it.
-                    root.db.execute('UPDATE telegram_connections SET state=?,epoch=?,error=NULL WHERE assistant=?',(state,uid(),identity))
-    return {'id':identity,'deleted':not restore,'telegram':'paused' if restore else 'stopped'}
+                    root.db.execute("UPDATE telegram_connections SET state=?,epoch=?,error=NULL,setup=CASE WHEN owner_user_id IS NULL THEN '{}' ELSE setup END WHERE assistant=?",(state,uid(),identity))
+    return {'id':identity,'deleted':not restore,'telegram':('pairing' if conn and state=='pairing' else 'paused') if restore else 'stopped'}

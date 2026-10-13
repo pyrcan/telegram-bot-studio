@@ -202,20 +202,57 @@ class Store:
               (uid(), participant, text, url, text[:110], 'pending' if url else 'not-needed', time.time(), key))
         return dict(self.db.execute('SELECT * FROM notes WHERE participant=? AND request_id=?', (participant, key)).fetchone())
 
-    def notes(self, participant):
+    def notes(self, participant, limit=None):
         self.active(participant)
-        rows = [dict(r) for r in self.db.execute('SELECT * FROM notes WHERE participant=? AND deleted_at IS NULL ORDER BY created DESC', (participant,))]
+        sql = 'SELECT * FROM notes WHERE participant=? AND deleted_at IS NULL ORDER BY created DESC'
+        args = (participant,)
+        if limit is not None:
+            sql += ' LIMIT ?'
+            args += (limit,)
+        rows = [dict(r) for r in self.db.execute(sql, args)]
         for row in rows:
             row['tags']=json.loads(row['tags']);row['metadata']=json.loads(row['metadata'])
         return rows
 
+    def note_count(self, participant):
+        self.active(participant)
+        return self.db.execute('SELECT count(*) FROM notes WHERE participant=? AND deleted_at IS NULL', (participant,)).fetchone()[0]
+
     def retrieve(self, participant, query='', limit=12):
-        rows = self.notes(participant)
         words = terms(query) - {'find','notes','about','what','have','saved','show','please','could','that','with','from','collection','search','does','there','this','give','digest','summarize','summarise','classify','organise','organize'}
-        if words:
-            for row in rows:
-                row['_score'] = len(words & terms(row['original']+' '+row['title']+' '+(row['article'] or '')+' '+' '.join(row['tags'])+' '+json.dumps(row['metadata'],ensure_ascii=False)))
-            rows = sorted((r for r in rows if r['_score']), key=lambda r: (r['_score'],r['created']), reverse=True)
+        if not words:
+            return self.notes(participant, limit)
+        self.active(participant)
+        sql = 'SELECT * FROM notes WHERE participant=? AND deleted_at IS NULL'
+        args = [participant]
+        # LIKE is only a candidate filter. Score with the original Unicode-aware
+        # tokenizer below; include non-ASCII/escaped JSON rows, where SQLite's
+        # ASCII-only LIKE folding cannot safely rule a match out.
+        if len(words) <= 8:
+            fields = ('original', 'title', 'article', 'tags', 'metadata')
+            ascii_words = [word for word in words if word.isascii()]
+            clauses = [f'{field} LIKE ?' for word in ascii_words for field in fields]
+            args.extend(f'%{word}%' for word in ascii_words for _ in fields)
+            clauses.extend(f"{field} GLOB '*[^ -~]*'" for field in fields)
+            clauses.extend(("tags GLOB '*\\u*'", "metadata GLOB '*\\u*'"))
+            sql += ' AND (' + ' OR '.join(clauses) + ')'
+        sql += ' ORDER BY created DESC'
+        rows = []
+        perfect = 0
+        for record in self.db.execute(sql, args):
+            row = dict(record)
+            row['tags']=json.loads(row['tags']);row['metadata']=json.loads(row['metadata'])
+            row['_score'] = len(words & terms(row['original']+' '+row['title']+' '+(row['article'] or '')+' '+' '.join(row['tags'])+' '+json.dumps(row['metadata'],ensure_ascii=False)))
+            if not row['_score']:
+                continue
+            rows.append(row)
+            if row['_score'] == len(words):
+                perfect += 1
+                # Rows arrive newest first. Once the limit is filled with
+                # maximum-score rows, no later row can displace them.
+                if perfect >= limit:
+                    break
+        rows.sort(key=lambda r: (r['_score'],r['created']), reverse=True)
         return rows[:limit]
 
     def refresh_links(self):

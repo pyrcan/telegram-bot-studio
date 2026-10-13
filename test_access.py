@@ -105,8 +105,8 @@ class AccessTests(fixture.TelegramTests):
  def test_trusted_action_routes_the_exact_review(self):
   from owner_action import execute
   ctx={'assistant':'pocket-notes','user_id':88,'operation':'allow','review':'r','epoch':'e','generation':0}
-  with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner'},clear=True),patch('owner_action.call') as call:
-   execute({'action':'change-access','context':ctx,'fields':{}})
+  with patch.dict(os.environ,{'AGENT_TOKEN':'synthetic-owner','CHAT_ID':'synthetic-chat'},clear=True),patch('owner_action.call') as call:
+   execute({'action':'change-access','context':ctx})
    call.assert_called_once_with('assistants/pocket-notes/access/change',ctx)
 
 if __name__=='__main__':unittest.main()
